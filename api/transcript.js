@@ -5,46 +5,108 @@ export default async function handler(req, res) {
   if (!videoId) return res.status(400).json({ error: "videoId required" })
 
   try {
-    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    // Method 1 — Try YouTube transcript via timedtext API
+    const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=json3`
+    const r1 = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
     })
 
-    const html = await response.text()
-    const captionMatch = html.match(/"captionTracks":\[(.*?)\]/)
-    if (!captionMatch) return res.status(404).json({ error: "No captions found. Try a video with English subtitles like TED Talks or Khan Academy." })
+    if (r1.ok) {
+      const data = await r1.json()
+      if (data?.events?.length > 0) {
+        const transcript = data.events
+          .filter((e) => e.segs)
+          .map((e) => e.segs.map((s) => s.utf8).join(""))
+          .join(" ")
+          .replace(/\n/g, " ")
+          .trim()
 
-    const captionTracks = JSON.parse(`[${captionMatch[1]}]`)
-    const track =
-      captionTracks.find((t) => t.languageCode === "en") ||
-      captionTracks.find((t) => t.languageCode?.startsWith("en")) ||
-      captionTracks[0]
+        if (transcript) return res.status(200).json({ transcript })
+      }
+    }
 
-    if (!track) {
-  const available = captionTracks.map(t => t.languageCode).join(", ")
-  return res.status(404).json({ error: `No English captions. Available languages: ${available}` })
-}
+    // Method 2 — Try auto-generated captions
+    const url2 = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en-US&fmt=json3`
+    const r2 = await fetch(url2, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    })
 
-    const captionRes = await fetch(track.baseUrl)
-    const captionXml = await captionRes.text()
+    if (r2.ok) {
+      const data2 = await r2.json()
+      if (data2?.events?.length > 0) {
+        const transcript = data2.events
+          .filter((e) => e.segs)
+          .map((e) => e.segs.map((s) => s.utf8).join(""))
+          .join(" ")
+          .replace(/\n/g, " ")
+          .trim()
 
-    const textMatches = captionXml.match(/<text[^>]*>(.*?)<\/text>/gs) || []
-    const transcript = textMatches
-      .map((t) =>
-        t.replace(/<[^>]+>/g, "")
-          .replace(/&amp;/g, "&")
-          .replace(/&#39;/g, "'")
-          .replace(/&quot;/g, '"')
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-      )
-      .join(" ")
-      .trim()
+        if (transcript) return res.status(200).json({ transcript })
+      }
+    }
 
-    if (!transcript) return res.status(404).json({ error: "Transcript is empty" })
-    return res.status(200).json({ transcript })
+    // Method 3 — Try asr (auto speech recognition captions)
+    const url3 = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&kind=asr&fmt=json3`
+    const r3 = await fetch(url3, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    })
+
+    if (r3.ok) {
+      const data3 = await r3.json()
+      if (data3?.events?.length > 0) {
+        const transcript = data3.events
+          .filter((e) => e.segs)
+          .map((e) => e.segs.map((s) => s.utf8).join(""))
+          .join(" ")
+          .replace(/\n/g, " ")
+          .trim()
+
+        if (transcript) return res.status(200).json({ transcript })
+      }
+    }
+
+    // Method 4 — Try fetching available tracks list
+    const listUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&type=list`
+    const listRes = await fetch(listUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    })
+    const listXml = await listRes.text()
+
+    const langMatch = listXml.match(/lang_code="([^"]+)"/)
+    if (langMatch) {
+      const lang = langMatch[1]
+      const url4 = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=json3`
+      const r4 = await fetch(url4, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      })
+      if (r4.ok) {
+        const data4 = await r4.json()
+        if (data4?.events?.length > 0) {
+          const transcript = data4.events
+            .filter((e) => e.segs)
+            .map((e) => e.segs.map((s) => s.utf8).join(""))
+            .join(" ")
+            .replace(/\n/g, " ")
+            .trim()
+
+          if (transcript) return res.status(200).json({ transcript })
+        }
+      }
+    }
+
+    return res.status(404).json({
+      error: "Could not fetch captions. This video may have captions disabled or restricted.",
+    })
 
   } catch (error) {
     return res.status(500).json({ error: error.message })
