@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
     const html = await response.text()
     const captionMatch = html.match(/"captionTracks":\[(.*?)\]/)
-    if (!captionMatch) return res.status(404).json({ error: "No captions found for this video" })
+    if (!captionMatch) return res.status(404).json({ error: "No captions found. Try a video with English subtitles like TED Talks or Khan Academy." })
 
     const captionTracks = JSON.parse(`[${captionMatch[1]}]`)
     const track =
@@ -22,7 +22,10 @@ export default async function handler(req, res) {
       captionTracks.find((t) => t.languageCode?.startsWith("en")) ||
       captionTracks[0]
 
-    if (!track) return res.status(404).json({ error: "No captions available" })
+    if (!track) {
+  const available = captionTracks.map(t => t.languageCode).join(", ")
+  return res.status(404).json({ error: `No English captions. Available languages: ${available}` })
+}
 
     const captionRes = await fetch(track.baseUrl)
     const captionXml = await captionRes.text()
