@@ -20,33 +20,48 @@ def get_transcript():
     if not video_id:
         return jsonify({"error": "videoId is required"}), 400
 
+    # Method 1 — Try youtube-transcript-api directly
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         ytt = YouTubeTranscriptApi()
-
-        # Try English first
         try:
-            transcript_list = ytt.fetch(
-                video_id,
-                languages=["en", "en-US", "en-GB"]
-            )
+            transcript_list = ytt.fetch(video_id, languages=["en", "en-US", "en-GB"])
             transcript = " ".join([t.text for t in transcript_list])
-            return jsonify({"transcript": transcript})
+            if transcript:
+                return jsonify({"transcript": transcript})
         except Exception:
             pass
 
-        # Try any available language
         try:
             transcripts = ytt.list(video_id)
             first = next(iter(transcripts))
             fetched = first.fetch()
             transcript = " ".join([t.text for t in fetched])
-            return jsonify({"transcript": transcript})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 404
+            if transcript:
+                return jsonify({"transcript": transcript})
+        except Exception:
+            pass
+    except Exception:
+        pass
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Method 2 — Fallback to Supadata
+    try:
+        import requests as req
+        supadata_key = os.environ.get("SUPADATA_API_KEY", "")
+        if supadata_key:
+            r = req.get(
+                f"https://api.supadata.ai/v1/youtube/transcript?videoId={video_id}&text=true",
+                headers={"x-api-key": supadata_key},
+                timeout=30
+            )
+            data = r.json()
+            transcript = data.get("content") or data.get("transcript") or data.get("text", "")
+            if transcript:
+                return jsonify({"transcript": transcript})
+    except Exception:
+        pass
+
+    return jsonify({"error": "Could not fetch transcript. Try uploading an audio file instead."}), 404
 
 
 # ── Simplify ────────────────────────────────────────────────────
