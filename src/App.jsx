@@ -1,28 +1,20 @@
 import { useState } from "react"
-import Groq from "groq-sdk"
 import jsPDF from "jspdf"
 import YoutubeInput from "./YoutubeInput"
 
-const groq = new Groq({
-  apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true,
-})
+const API = import.meta.env.DEV
+  ? "http://localhost:5000"
+  : "https://glotclass-backend.onrender.com"
 
 async function fetchYoutubeTranscript(videoId) {
-  try {
-    const res = await fetch(`/api/transcript?videoId=${videoId}`)
-    const data = await res.json()
-    if (!res.ok || data.error) {
-      throw new Error(data.error || "Failed to fetch transcript")
-    }
-    return data.transcript
-  } catch (e) {
-    throw new Error(e.message || "Could not fetch transcript.")
-  }
+  const res = await fetch(`${API}/api/transcript?videoId=${videoId}`)
+  const data = await res.json()
+  if (!res.ok || data.error) throw new Error(data.error)
+  return data.transcript
 }
 
 export default function App() {
-  const [inputMode, setInputMode] = useState("audio") // "audio" or "youtube"
+  const [inputMode, setInputMode] = useState("audio")
   const [activeTab, setActiveTab] = useState("transcript")
   const [language, setLanguage] = useState("English")
   const [level, setLevel] = useState("simple")
@@ -38,15 +30,11 @@ export default function App() {
   const [dyslexiaFont, setDyslexiaFont] = useState(false)
   const [fontSize, setFontSize] = useState("normal")
   const [youtubeUrl, setYoutubeUrl] = useState("")
-
-  // Quiz states
   const [quiz, setQuiz] = useState([])
   const [quizLoading, setQuizLoading] = useState(false)
   const [selectedAnswers, setSelectedAnswers] = useState({})
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [quizScore, setQuizScore] = useState(0)
-
-  // Chatbot states
   const [chatMessages, setChatMessages] = useState([
     { role: "assistant", content: "Hi! I'm your GlotClass AI assistant. Ask me anything about the notes!" }
   ])
@@ -70,52 +58,29 @@ export default function App() {
     setTranscript(rawText)
     setActiveTab("transcript")
 
-    let simplifiedText = rawText
     try {
-      const simplifyRes = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{
-          role: "user",
-          content: `You are an expert teacher. Simplify the following text for a ${
-            level === "simple" ? "Grade 5 student" :
-            level === "medium" ? "Grade 8 student" : "advanced student"
-          }.
-
-Your response must:
-- Start with a 2-3 sentence overview of the topic
-- Break it into clear sections with headings using ##
-- Use bullet points under each section
-- Explain every key concept in simple words with examples
-- End with a "Key Takeaways" section summarizing the 3-5 most important points
-- Be detailed and thorough — aim for at least 300-400 words
-
-Text to simplify:
-${rawText}`,
-        }],
+      const simplifyRes = await fetch(`${API}/api/simplify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: rawText, level }),
       })
-      simplifiedText = simplifyRes.choices[0].message.content
+      const simplifyData = await simplifyRes.json()
+      const simplifiedText = simplifyData.result || rawText
       setSimplified(simplifiedText)
-    } catch (_e) {// eslint-disable-line no-unused-vars
-      setError("Transcription worked! But simplification failed.")
-    }
 
-    try {
-      const translateRes = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{
-          role: "user",
-          content: language === "English"
-            ? `Clean up and format the following text with proper paragraphs and punctuation. Only return the formatted text:\n\n${simplifiedText}`
-            : `Translate the following text to ${language}. Keep the headings and bullet point structure. Only return the translated text:\n\n${simplifiedText}`,
-        }],
+      const translateRes = await fetch(`${API}/api/translate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: simplifiedText, language }),
       })
-      setTranslated(translateRes.choices[0].message.content)
-    } catch (_e) { // eslint-disable-line no-unused-vars
-      setError("Simplification worked! But translation failed.")
+      const translateData = await translateRes.json()
+      setTranslated(translateData.result || "")
+    } catch {
+
+      setError("Processing failed. Please try again.")
     }
   }
 
-  // Audio transcription
   const handleAudioTranscribe = async () => {
     if (!audioFile) {
       setError("Please upload an audio file first!")
@@ -125,49 +90,23 @@ ${rawText}`,
     setLoading(true)
 
     try {
-      const MAX_SIZE = 25 * 1024 * 1024
-      let fullTranscript = ""
+      const formData = new FormData()
+      formData.append("file", audioFile)
+      const res = await fetch(`${API}/api/transcribe`, {
+        method: "POST",
+        body: formData,
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      await processTranscript(data.transcript)
+    } catch {
 
-      if (audioFile.size > MAX_SIZE) {
-        setError("Large file — transcribing in chunks...")
-        const { FFmpeg } = await import("@ffmpeg/ffmpeg")
-        const { fetchFile } = await import("@ffmpeg/util")
-        const ffmpeg = new FFmpeg()
-        await ffmpeg.load()
-        ffmpeg.writeFile("input.mp3", await fetchFile(audioFile))
-        let duration = 0
-        ffmpeg.on("log", ({ message }) => {
-          const match = message.match(/Duration: (\d+):(\d+):(\d+)/)
-          if (match) duration = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3])
-        })
-        await ffmpeg.exec(["-i", "input.mp3", "-f", "null", "-"])
-        const CHUNK_DURATION = 10 * 60
-        const numChunks = Math.ceil(duration / CHUNK_DURATION)
-        for (let i = 0; i < numChunks; i++) {
-          const start = i * CHUNK_DURATION
-          const outputName = `chunk_${i}.mp3`
-          await ffmpeg.exec(["-i", "input.mp3", "-ss", String(start), "-t", String(CHUNK_DURATION), "-acodec", "libmp3lame", outputName])
-          const chunkData = await ffmpeg.readFile(outputName)
-          const chunkFile = new File([new Blob([chunkData], { type: "audio/mpeg" })], outputName, { type: "audio/mpeg" })
-          setError(`Transcribing chunk ${i + 1} of ${numChunks}...`)
-          const res = await groq.audio.transcriptions.create({ file: chunkFile, model: "whisper-large-v3-turbo" })
-          fullTranscript += res.text + " "
-        }
-        setError("")
-      } else {
-        const res = await groq.audio.transcriptions.create({ file: audioFile, model: "whisper-large-v3-turbo" })
-        fullTranscript = res.text
-      }
-
-      await processTranscript(fullTranscript)
-    } catch (_e) { // eslint-disable-line no-unused-vars
-      setError("Transcription failed. Check your API key and try again.")
+      setError("Transcription failed. Please try again.")
     } finally {
       setLoading(false)
     }
   }
 
-  // YouTube transcript
   const handleYoutubeTranscript = async (videoId, url) => {
     resetResults()
     setLoading(true)
@@ -185,12 +124,8 @@ ${rawText}`,
     }
   }
 
-  // Generate quiz
   const handleGenerateQuiz = async () => {
-    if (!simplified) {
-      setError("Please transcribe content first!")
-      return
-    }
+    if (!simplified) return
     setQuizLoading(true)
     setQuiz([])
     setSelectedAnswers({})
@@ -198,30 +133,16 @@ ${rawText}`,
     setActiveTab("quiz")
 
     try {
-      const res = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{
-          role: "user",
-          content: `Based on the following notes, create exactly 5 multiple choice questions to test understanding.
-
-Return ONLY a valid JSON array in this exact format, nothing else:
-[
-  {
-    "question": "Question text here?",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "answer": "Option A"
-  }
-]
-
-Notes:
-${simplified}`,
-        }],
+      const res = await fetch(`${API}/api/quiz`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: simplified }),
       })
-      let raw = res.choices[0].message.content.trim()
-      raw = raw.replace(/```json|```/g, "").trim()
-      setQuiz(JSON.parse(raw))
-    } catch (_e) { // eslint-disable-line no-unused-vars
-      setError("Could not generate quiz. Please try again.")
+      const data = await res.json()
+      setQuiz(data.quiz || [])
+    } catch {
+
+      setError("Could not generate quiz.")
     } finally {
       setQuizLoading(false)
     }
@@ -243,24 +164,25 @@ ${simplified}`,
     setChatLoading(true)
 
     try {
-      const res = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          {
-            role: "system",
-            content: `You are a helpful classroom assistant for GlotClass AI.
-The student has the following notes:
-
-${simplified || transcript || "No notes available yet."}
-
-Answer questions based on these notes. Be friendly, clear and encouraging.`,
-          },
-          ...newMessages,
-        ],
+      const res = await fetch(`${API}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: newMessages,
+          context: simplified || transcript,
+        }),
       })
-      setChatMessages([...newMessages, { role: "assistant", content: res.choices[0].message.content }])
-    } catch (_e) {// eslint-disable-line no-unused-vars
-      setChatMessages([...newMessages, { role: "assistant", content: "Sorry, I couldn't process that. Please try again!" }])
+      const data = await res.json()
+      setChatMessages([...newMessages, {
+        role: "assistant",
+        content: data.result || "Sorry I could not process that.",
+      }])
+    } catch {
+
+      setChatMessages([...newMessages, {
+        role: "assistant",
+        content: "Sorry, something went wrong!",
+      }])
     } finally {
       setChatLoading(false)
     }
@@ -278,7 +200,8 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
     const text = tabContent[activeTab]
     if (!text) return
     const doc = new jsPDF()
-    const title = activeTab === "transcript" ? "Raw Transcript" : activeTab === "simplified" ? "Simplified Notes" : `Translation (${language})`
+    const title = activeTab === "transcript" ? "Raw Transcript" :
+      activeTab === "simplified" ? "Simplified Notes" : `Translation (${language})`
     doc.setFontSize(18)
     doc.setTextColor(30, 64, 175)
     doc.text("GlotClass AI", 14, 20)
@@ -306,7 +229,6 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
       className={`min-h-screen font-sans transition-colors duration-300 ${darkMode ? "bg-gray-900 text-white" : "bg-blue-50 text-gray-900"}`}
       style={dyslexiaStyle}
     >
-      {/* Navbar */}
       <nav className={`px-6 py-4 flex items-center justify-between shadow ${darkMode ? "bg-gray-800" : "bg-blue-800"}`}>
         <span className="text-white text-xl font-semibold">🎓 GlotClass AI</span>
         <div className="flex items-center gap-3">
@@ -322,34 +244,19 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
 
       <main className="max-w-5xl mx-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
 
-        {/* Input card */}
         <div className={cardClass}>
-          {/* Mode toggle */}
           <div className={`flex rounded-xl p-1 gap-1 mb-4 ${darkMode ? "bg-gray-700" : "bg-slate-100"}`}>
-            {[
-              { key: "audio", label: "🎙️ Audio Upload" },
-              { key: "youtube", label: "▶️ YouTube URL" },
-            ].map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setInputMode(m.key)}
-                className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${
-                  inputMode === m.key
-                    ? "bg-blue-600 text-white shadow"
-                    : darkMode ? "text-gray-300" : "text-slate-500"
-                }`}
-              >
+            {[{ key: "audio", label: "🎙️ Audio Upload" }, { key: "youtube", label: "▶️ YouTube URL" }].map((m) => (
+              <button key={m.key} onClick={() => setInputMode(m.key)}
+                className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${inputMode === m.key ? "bg-blue-600 text-white shadow" : darkMode ? "text-gray-300" : "text-slate-500"}`}>
                 {m.label}
               </button>
             ))}
           </div>
 
-          {/* Audio mode */}
           {inputMode === "audio" && (
             <>
-              <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl py-10 cursor-pointer transition ${
-                darkMode ? "border-blue-500 bg-gray-700 hover:bg-gray-600" : "border-blue-300 bg-blue-50 hover:bg-blue-100"
-              }`}>
+              <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl py-10 cursor-pointer transition ${darkMode ? "border-blue-500 bg-gray-700 hover:bg-gray-600" : "border-blue-300 bg-blue-50 hover:bg-blue-100"}`}>
                 <span className="text-4xl mb-2">🎙️</span>
                 <span className="text-blue-400 font-medium text-sm">{fileName ? fileName : "Drop audio file here"}</span>
                 <span className="text-slate-400 text-xs mt-1">or click to browse · MP3, WAV, M4A</span>
@@ -359,51 +266,34 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
                 }} />
               </label>
               {error && <p className="text-red-400 text-xs mt-3">{error}</p>}
-              <button
-                onClick={handleAudioTranscribe}
-                disabled={loading}
-                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2.5 rounded-xl transition"
-              >
+              <button onClick={handleAudioTranscribe} disabled={loading}
+                className="mt-4 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium py-2.5 rounded-xl transition">
                 {loading ? "⏳ Processing..." : "▶ Transcribe & Translate"}
               </button>
             </>
           )}
 
-          {/* YouTube mode */}
           {inputMode === "youtube" && (
             <>
-              <YoutubeInput
-                onTranscriptReady={handleYoutubeTranscript}
-                darkMode={darkMode}
-                loading={loading}
-              />
+              <YoutubeInput onTranscriptReady={handleYoutubeTranscript} darkMode={darkMode} loading={loading} />
               {error && <p className="text-red-400 text-xs mt-3">{error}</p>}
-              {loading && (
-                <p className="text-blue-400 text-xs mt-3 animate-pulse">⏳ Processing YouTube content...</p>
-              )}
+              {loading && <p className="text-blue-400 text-xs mt-3 animate-pulse">⏳ Processing YouTube content...</p>}
             </>
           )}
         </div>
 
-        {/* Settings card */}
         <div className={cardClass}>
           <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-4">Settings</p>
           <label className="block text-xs text-slate-400 mb-1">Translate to</label>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-slate-50 border-slate-200 text-slate-700"}`}
-          >
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}
+            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
             {["English", "Hindi", "Bengali", "Tamil", "Telugu", "Marathi", "Spanish", "French"].map(
               (lang) => <option key={lang}>{lang}</option>
             )}
           </select>
           <label className="block text-xs text-slate-400 mb-1">Reading level</label>
-          <select
-            value={level}
-            onChange={(e) => setLevel(e.target.value)}
-            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-slate-50 border-slate-200 text-slate-700"}`}
-          >
+          <select value={level} onChange={(e) => setLevel(e.target.value)}
+            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-slate-50 border-slate-200 text-slate-700"}`}>
             <option value="simple">Simple (Grade 5)</option>
             <option value="medium">Medium (Grade 8)</option>
             <option value="advanced">Advanced</option>
@@ -419,7 +309,6 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
           </div>
         </div>
 
-        {/* Results card */}
         <div className={`${cardClass} md:col-span-2`}>
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Results</p>
@@ -435,14 +324,14 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
                 </>
               )}
               {simplified && (
-                <button onClick={handleGenerateQuiz} disabled={quizLoading} className="text-xs px-3 py-1.5 rounded-lg border bg-green-600 text-white border-green-600 hover:bg-green-700 transition disabled:opacity-50">
+                <button onClick={handleGenerateQuiz} disabled={quizLoading}
+                  className="text-xs px-3 py-1.5 rounded-lg border bg-green-600 text-white border-green-600 hover:bg-green-700 transition disabled:opacity-50">
                   {quizLoading ? "⏳ Generating..." : "🧠 Generate Quiz"}
                 </button>
               )}
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="flex gap-2 mb-4 flex-wrap">
             {[
               { key: "transcript", label: "📄 Raw transcript" },
@@ -458,7 +347,6 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
             ))}
           </div>
 
-          {/* Transcript / Simplified / Translated */}
           {["transcript", "simplified", "translated"].includes(activeTab) && (
             <div className={`rounded-xl p-6 min-h-32 whitespace-pre-wrap transition-all ${fontSizeClass} ${darkMode ? "bg-gray-700 text-gray-100" : "bg-slate-50 text-slate-700"}`}>
               {loading ? (
@@ -469,7 +357,6 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
             </div>
           )}
 
-          {/* Quiz */}
           {activeTab === "quiz" && (
             <div className={`rounded-xl p-6 min-h-32 ${darkMode ? "bg-gray-700 text-gray-100" : "bg-slate-50 text-slate-700"}`}>
               {quizLoading ? (
@@ -510,11 +397,13 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
                     </div>
                   ))}
                   {!quizSubmitted ? (
-                    <button onClick={handleSubmitQuiz} disabled={Object.keys(selectedAnswers).length < quiz.length} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-medium py-2.5 rounded-xl transition text-sm">
+                    <button onClick={handleSubmitQuiz} disabled={Object.keys(selectedAnswers).length < quiz.length}
+                      className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-medium py-2.5 rounded-xl transition text-sm">
                       Submit Quiz
                     </button>
                   ) : (
-                    <button onClick={() => { setQuiz([]); setSelectedAnswers({}); setQuizSubmitted(false); handleGenerateQuiz() }} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition text-sm">
+                    <button onClick={() => { setQuiz([]); setSelectedAnswers({}); setQuizSubmitted(false); handleGenerateQuiz() }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition text-sm">
                       🔄 Try New Quiz
                     </button>
                   )}
@@ -523,7 +412,6 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
             </div>
           )}
 
-          {/* Chatbot */}
           {activeTab === "chat" && (
             <div className={`rounded-xl overflow-hidden border ${darkMode ? "border-gray-600" : "border-slate-200"}`}>
               <div className={`p-4 space-y-3 h-72 overflow-y-auto ${darkMode ? "bg-gray-700" : "bg-slate-50"}`}>
@@ -543,15 +431,13 @@ Answer questions based on these notes. Be friendly, clear and encouraging.`,
                 )}
               </div>
               <div className={`flex gap-2 p-3 border-t ${darkMode ? "bg-gray-800 border-gray-600" : "bg-white border-slate-200"}`}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
+                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleChatSend()}
                   placeholder="Ask something about the notes..."
                   className={`flex-1 rounded-xl px-4 py-2 text-sm border outline-none ${darkMode ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400" : "bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-400"}`}
                 />
-                <button onClick={handleChatSend} disabled={chatLoading || !chatInput.trim()} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
+                <button onClick={handleChatSend} disabled={chatLoading || !chatInput.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded-xl text-sm font-medium transition">
                   Send
                 </button>
               </div>
