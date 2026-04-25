@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
 from groq import Groq
 import os
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,48 +20,46 @@ def get_transcript():
     if not video_id:
         return jsonify({"error": "videoId is required"}), 400
 
-    # Method 1 — Try youtube-transcript-api directly
+    # Method 1 — youtube-transcript-api
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
         ytt = YouTubeTranscriptApi()
         try:
-            transcript_list = ytt.fetch(video_id, languages=["en", "en-US", "en-GB"])
-            transcript = " ".join([t.text for t in transcript_list])
-            if transcript:
-                return jsonify({"transcript": transcript})
+            tlist = ytt.fetch(video_id, languages=["en", "en-US", "en-GB"])
+            text = " ".join([t.text for t in tlist])
+            if text:
+                return jsonify({"transcript": text})
         except Exception:
             pass
-
         try:
-            transcripts = ytt.list(video_id)
-            first = next(iter(transcripts))
-            fetched = first.fetch()
-            transcript = " ".join([t.text for t in fetched])
-            if transcript:
-                return jsonify({"transcript": transcript})
+            all_t = ytt.list(video_id)
+            first = next(iter(all_t))
+            text = " ".join([t.text for t in first.fetch()])
+            if text:
+                return jsonify({"transcript": text})
         except Exception:
             pass
     except Exception:
         pass
 
-    # Method 2 — Fallback to Supadata
-    try:
-        import requests as req
-        supadata_key = os.environ.get("SUPADATA_API_KEY", "")
-        if supadata_key:
-            r = req.get(
-                f"https://api.supadata.ai/v1/youtube/transcript?videoId={video_id}&text=true",
+    # Method 2 — Supadata fallback
+    supadata_key = os.environ.get("SUPADATA_API_KEY", "")
+    if supadata_key:
+        try:
+            r = requests.get(
+                f"https://api.supadata.ai/v1/youtube/transcript",
+                params={"videoId": video_id, "text": "true"},
                 headers={"x-api-key": supadata_key},
                 timeout=30
             )
             data = r.json()
-            transcript = data.get("content") or data.get("transcript") or data.get("text", "")
-            if transcript:
-                return jsonify({"transcript": transcript})
-    except Exception:
-        pass
+            text = data.get("content") or data.get("transcript") or data.get("text", "")
+            if text:
+                return jsonify({"transcript": text})
+            return jsonify({"error": data.get("error", "Supadata returned empty")}), 404
+        except Exception as e:
+            return jsonify({"error": f"Supadata failed: {str(e)}"}), 500
 
-    return jsonify({"error": "Could not fetch transcript. Try uploading an audio file instead."}), 404
+    return jsonify({"error": "No transcript method available"}), 404
 
 
 # ── Simplify ────────────────────────────────────────────────────
