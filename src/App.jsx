@@ -80,15 +80,24 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false)
   const chatEndRef = useRef(null)
 
-  // Timer
-  useEffect(() => {
-    const t = setInterval(() => setSeconds(s => s + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
+// Mobile detection
+const [isMobile, setIsMobile] = useState(window.innerWidth < 640)
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [chatMessages])
+useEffect(() => {
+  const handler = () => setIsMobile(window.innerWidth < 640)
+  window.addEventListener("resize", handler)
+  return () => window.removeEventListener("resize", handler)
+}, [])
+
+// Timer
+useEffect(() => {
+  const t = setInterval(() => setSeconds(s => s + 1), 1000)
+  return () => clearInterval(t)
+}, [])
+
+useEffect(() => {
+  chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
+}, [chatMessages])
 
   const fmt = (s) => {
     const m = Math.floor(s / 60), sc = s % 60
@@ -113,31 +122,41 @@ export default function App() {
   }
 
   const processTranscript = async (rawText) => {
-    setTranscript(rawText)
-    setWordCount(rawText.split(/\s+/).filter(Boolean).length)
-    setTvView("o")
+  setTranscript(rawText)
+  setWordCount(rawText.split(/\s+/).filter(Boolean).length)
+  setTvView("o")
+  setTab("tr")
 
-    try {
-      const simplifyRes = await fetch(`${API}/api/simplify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: rawText, level }),
-      })
-      const simplifyData = await simplifyRes.json()
-      setSimplified(simplifyData.result || rawText)
+  // Show transcript immediately
+  setSimplified("")
+  setTranslated("")
 
-      const lang = LANGS.find(l => l.c === language)
-      const translateRes = await fetch(`${API}/api/translate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: simplifyData.result || rawText, language: lang?.l || "English" }),
-      })
-      const translateData = await translateRes.json()
+  // Simplify
+  try {
+    const simplifyRes = await fetch(`${API}/api/simplify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: rawText, level }),
+    })
+    const simplifyData = await simplifyRes.json()
+    const simplifiedText = simplifyData.result || rawText
+    setSimplified(simplifiedText)
+    setTvView("s") // Auto switch to simplified when ready
+
+    // Translate in background — don't block UI
+    const lang = LANGS.find(l => l.c === language)
+    fetch(`${API}/api/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: simplifiedText, language: lang?.l || "English" }),
+    }).then(r => r.json()).then(translateData => {
       setTranslated(translateData.result || "")
-    } catch {
-      setError("Processing failed. Please try again.")
-    }
+    }).catch(() => {})
+
+  } catch {
+    setError("Processing failed. Please try again.")
   }
+}
 
   const handleAudioTranscribe = async () => {
     if (!audioFile) { setError("Please upload an audio file first!"); return }
@@ -267,7 +286,7 @@ export default function App() {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* Sidebar */}
-        <aside style={{ width: 190, background: "var(--bgc)", borderRight: "1px solid var(--bdr)", display: "flex", flexDirection: "column", padding: "1rem 0.8rem", gap: "1rem", overflowY: "auto", flexShrink: 0 }}>
+        <aside style={{ width: 190, background: "var(--bgc)", borderRight: "1px solid var(--bdr)", display: isMobile ? "none" : "flex", flexDirection: "column", padding: "1rem 0.8rem", gap: "1rem", overflowY: "auto", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: "0.9rem", borderBottom: "1px solid var(--bdr)" }}>
             <div style={{ width: 34, height: 34, background: "var(--ac)", color: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>G</div>
             <div>
@@ -293,7 +312,7 @@ export default function App() {
         </aside>
 
         {/* Main content */}
-        <main style={{ flex: 1, overflowY: "auto", padding: "1.4rem 1.6rem" }}>
+        <main style={{ flex: 1, overflowY: "auto", padding: isMobile ? "1rem 0.9rem 5rem" : "1.4rem 1.6rem" }}>
           <div style={{ maxWidth: 820, margin: "0 auto" }}>
 
             {/* TRANSCRIBE TAB */}
@@ -312,10 +331,10 @@ export default function App() {
                 </div>
 
                 {/* Input grid */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.9rem", marginBottom: "1.2rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.9rem", marginBottom: "1.2rem" }}>
 
                   {inputMode === "audio" ? (
-                    <div style={{ background: "var(--bgc)", border: "1px solid var(--bdr)", borderRadius: 12, padding: "1.1rem", display: "flex", flexDirection: "column", gap: 7 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.9rem", marginBottom: "1.2rem" }}>
                       <div style={{ fontSize: "1.5rem" }}>🎙️</div>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--tx)" }}>Audio Upload</div>
                       <div style={{ fontSize: "11.5px", color: "var(--tx3)" }}>MP3, WAV, M4A from device</div>
@@ -583,7 +602,7 @@ export default function App() {
               <div>
                 <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: "1.4rem", color: "var(--tx)", fontWeight: 400, marginBottom: 3 }}>⚙️ Settings</h2>
                 <p style={{ color: "var(--tx3)", fontSize: "12.5px", marginBottom: "1.2rem" }}>Customise your learning experience</p>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.9rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "0.9rem" }}>
 
                   <div style={{ background: "var(--bgc)", border: "1px solid var(--bdr)", borderRadius: 12, padding: "1.2rem" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tx)", marginBottom: 7 }}>🎨 Theme</div>
@@ -637,6 +656,18 @@ export default function App() {
 
           </div>
         </main>
+
+        {isMobile && (
+          <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "var(--bgc)", borderTop: "1px solid var(--bdr)", padding: "8px 0 12px", zIndex: 100, display: "flex", justifyContent: "space-around" }}>
+            {navItems.map(({ key, icon, label }) => (
+              <button key={key} onClick={() => setTab(key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, border: "none", background: "transparent", color: tab === key ? "var(--ac)" : "var(--tx3)", cursor: "pointer", fontSize: 10, fontWeight: tab === key ? 700 : 500, padding: "4px 14px", minWidth: 60 }}>
+                <span style={{ fontSize: 22 }}>{icon}</span>
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
+
       </div>
     </div>
   )
