@@ -1,3 +1,4 @@
+from auth import require_auth
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -15,6 +16,7 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 # ── YouTube transcript ──────────────────────────────────────────
 @app.route("/api/transcript", methods=["GET"])
+@require_auth
 def get_transcript():
     video_id = request.args.get("videoId")
     if not video_id:
@@ -64,6 +66,7 @@ def get_transcript():
 
 # ── Simplify ────────────────────────────────────────────────────
 @app.route("/api/simplify", methods=["POST"])
+@require_auth
 def simplify():
     data = request.json
     text = data.get("text", "")
@@ -101,6 +104,7 @@ Text to simplify:
 
 # ── Translate ───────────────────────────────────────────────────
 @app.route("/api/translate", methods=["POST"])
+@require_auth
 def translate():
     data = request.json
     text = data.get("text", "")
@@ -124,6 +128,7 @@ def translate():
 
 # ── Quiz ────────────────────────────────────────────────────────
 @app.route("/api/quiz", methods=["POST"])
+@require_auth
 def quiz():
     data = request.json
     text = data.get("text", "")
@@ -158,6 +163,7 @@ Notes:
 
 # ── Chat ────────────────────────────────────────────────────────
 @app.route("/api/chat", methods=["POST"])
+@require_auth
 def chat():
     data = request.json
     messages = data.get("messages", [])
@@ -186,6 +192,7 @@ Answer questions based on these notes. Be friendly, clear and encouraging."""
 
 # ── Whisper transcription ───────────────────────────────────────
 @app.route("/api/transcribe", methods=["POST"])
+@require_auth
 def transcribe():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400

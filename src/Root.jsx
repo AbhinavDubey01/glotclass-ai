@@ -1,12 +1,10 @@
-import { StrictMode, useState, useEffect } from "react"
-import { createRoot } from "react-dom/client"
+import { useState, useEffect } from "react"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import "./index.css"
 import App from "./App.jsx"
 import LoginPage from "./LoginPage.jsx"
 import { onAuthChange } from "./firebase.js"
 
-function Root() {
+export default function Root() {
   const [user, setUser] = useState(undefined)
 
   useEffect(() => {
@@ -32,9 +30,3 @@ function Root() {
     </BrowserRouter>
   )
 }
-
-createRoot(document.getElementById("root")).render(
-  <StrictMode>
-    <Root />
-  </StrictMode>
-)

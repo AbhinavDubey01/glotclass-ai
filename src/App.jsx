@@ -1,13 +1,12 @@
+import { logout, callAPI } from "./firebase"
 import { useState, useEffect, useRef } from "react"
 import jsPDF from "jspdf"
 import YoutubeInput from "./YoutubeInput"
 
-const API = import.meta.env.DEV
-  ? "http://localhost:5000"
-  : "https://glotclass-backend.onrender.com"
+
 
 async function fetchYoutubeTranscript(videoId) {
-  const res = await fetch(`${API}/api/transcript?videoId=${videoId}`)
+  const res = await callAPI(`/api/transcript?videoId=${videoId}`)
   const data = await res.json()
   if (!res.ok || data.error) throw new Error(data.error)
   return data.transcript
@@ -43,7 +42,7 @@ const FSZ = [
   { id: "xl", l: "XL", px: "18px" },
 ]
 
-export default function App() {
+export default function App({ user }) {
   const [tab, setTab] = useState("tr")
   const [inputMode, setInputMode] = useState("audio")
   const [language, setLanguage] = useState("en")
@@ -133,7 +132,7 @@ useEffect(() => {
 
   // Simplify
   try {
-    const simplifyRes = await fetch(`${API}/api/simplify`, {
+    const simplifyRes = await callAPI(`/api/simplify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: rawText, level }),
@@ -145,13 +144,14 @@ useEffect(() => {
 
     // Translate in background — don't block UI
     const lang = LANGS.find(l => l.c === language)
-    fetch(`${API}/api/translate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: simplifiedText, language: lang?.l || "English" }),
-    }).then(r => r.json()).then(translateData => {
-      setTranslated(translateData.result || "")
-    }).catch(() => {})
+    try {
+  const translateRes = await callAPI(`/api/translate`, {
+    method: "POST",
+    body: JSON.stringify({ text: simplifiedText, language: lang?.l || "English" }),
+  })
+  const translateData = await translateRes.json()
+  setTranslated(translateData.result || "")
+} catch (_e) { console.log(_e) }
 
   } catch {
     setError("Processing failed. Please try again.")
@@ -164,7 +164,7 @@ useEffect(() => {
     try {
       const formData = new FormData()
       formData.append("file", audioFile)
-      const res = await fetch(`${API}/api/transcribe`, { method: "POST", body: formData })
+      const res = await callAPI(`/api/transcribe`, { method: "POST", body: formData })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       await processTranscript(data.transcript)
@@ -174,25 +174,28 @@ useEffect(() => {
   }
 
   const handleYoutubeTranscript = async (videoId) => {
-    
-    setError("Fetching YouTube transcript...")
-    try {
-      const rawText = await fetchYoutubeTranscript(videoId)
-      setError(""); await processTranscript(rawText)
-    } catch (e) { setError(e.message) }
-    finally { setLoading(false) }
-  }
+  resetResults()
+  setLoading(true)
+  setError("Fetching YouTube transcript...")
+  try {
+    const rawText = await fetchYoutubeTranscript(videoId)
+    setError("")
+    await processTranscript(rawText)
+  } catch (e) { setError(e.message) }
+  finally { setLoading(false) }
+}
 
   const handleGenerateQuiz = async () => {
     if (!simplified) return
     setQuizLoading(true); setQuiz([]); setSelectedAnswers({})
     setQuizSubmitted(false);  setTab("qz")
     try {
-      const res = await fetch(`${API}/api/quiz`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: simplified }),
-      })
-      const data = await res.json()
+      const res = await callAPI(`/api/quiz`, {
+  method: "POST",
+  body: JSON.stringify({ text: simplified }),
+})
+const data = await res.json()
+      
       setQuiz(data.quiz || [])
     } catch { setError("Could not generate quiz.") }
     finally { setQuizLoading(false) }
@@ -210,11 +213,11 @@ useEffect(() => {
     const newMessages = [...chatMessages, userMsg]
     setChatMessages(newMessages); setChatInput(""); setChatLoading(true)
     try {
-      const res = await fetch(`${API}/api/chat`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages, context: simplified || transcript }),
-      })
-      const data = await res.json()
+      const res = await callAPI(`/api/chat`, {
+  method: "POST",
+  body: JSON.stringify({ messages: newMessages, context: simplified || transcript }),
+})
+const data = await res.json()
       setChatMessages([...newMessages, { role: "assistant", content: data.result || "Sorry, something went wrong!" }])
     } catch {
       setChatMessages([...newMessages, { role: "assistant", content: "Sorry, something went wrong!" }])
@@ -264,6 +267,17 @@ useEffect(() => {
 
       {/* Top bar */}
       <header style={{ height: 50, background: "var(--bgc)", borderBottom: "1px solid var(--bdr)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.2rem", gap: "0.8rem", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+  {user?.photoURL && (
+    <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid var(--bdr)" }} />
+  )}
+  <span style={{ fontSize: 12, color: "var(--tx2)", fontWeight: 500 }}>
+    {user?.displayName?.split(" ")[0] || user?.email?.split("@")[0]}
+  </span>
+  <button onClick={logout} style={{ background: "transparent", border: "1.5px solid var(--bdr)", color: "var(--tx3)", fontSize: 11, padding: "4px 10px", borderRadius: 20, cursor: "pointer" }}>
+    Sign out
+  </button>
+</div>
         <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: "1.1rem" }}>
           <span style={{ color: "var(--tx)" }}>Glot</span>
           <span style={{ color: "var(--ac)" }}>Class</span>
