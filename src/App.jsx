@@ -45,10 +45,10 @@ const FSZ = [
 export default function App({ user }) {
   const [tab, setTab] = useState("tr")
   const [inputMode, setInputMode] = useState("audio")
-  const [language, setLanguage] = useState("en")
-  const [level, setLevel] = useState("medium")
-  const [fsz, setFsz] = useState("md")
-  const [theme, setTheme] = useState("light")
+  const [language, setLanguage] = useState(() => localStorage.getItem("gc_lang") || "en")
+  const [level, setLevel] = useState(() => localStorage.getItem("gc_level") || "medium")
+  const [fsz, setFsz] = useState(() => localStorage.getItem("gc_fsz") || "md")
+  const [theme, setTheme] = useState(() => localStorage.getItem("gc_theme") || "light")
   const [fileName, setFileName] = useState(null)
   const [audioFile, setAudioFile] = useState(null)
   const [transcript, setTranscript] = useState("")
@@ -97,6 +97,13 @@ useEffect(() => {
 useEffect(() => {
   chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
 }, [chatMessages])
+
+useEffect(() => {
+  localStorage.setItem("gc_lang", language)
+  localStorage.setItem("gc_level", level)
+  localStorage.setItem("gc_fsz", fsz)
+  localStorage.setItem("gc_theme", theme)
+}, [language, level, fsz, theme])
 
   const fmt = (s) => {
     const m = Math.floor(s / 60), sc = s % 60
