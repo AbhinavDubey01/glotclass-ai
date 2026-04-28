@@ -19,7 +19,7 @@ const LANGS = [
 ]
 
 export default function ClassroomStudent() {
-  const [roomCode, setRoomCode] = useState("")
+  const [roomCode, setRoomCode] = useState(() => sessionStorage.getItem("gc_room") || "")
   const [joined, setJoined] = useState(false)
   const [roomData, setRoomData] = useState(null)
   const [error, setError] = useState("")
@@ -66,6 +66,8 @@ export default function ClassroomStudent() {
   const joinRoom = async () => {
     const code = roomCode.toUpperCase().trim()
     if (code.length < 4) { setError("Please enter a valid room code"); return }
+
+    sessionStorage.setItem("gc_room", code)
 
     const roomRef = ref(db, `rooms/${code}`)
     onValue(roomRef, (snap) => {

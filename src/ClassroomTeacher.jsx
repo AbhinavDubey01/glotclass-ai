@@ -12,6 +12,7 @@ export default function ClassroomTeacher() {
   const [transcript, setTranscript] = useState("")
   const [simplified, setSimplified] = useState("")
   const [studentCount, setStudentCount] = useState(0)
+  const [error, setError] = useState("")
   const [status, setStatus] = useState("idle")
   const [language, setLanguage] = useState("English")
   const recognitionRef = useRef(null)
@@ -91,6 +92,7 @@ const startListening = () => {
   recognition.continuous = true
   recognition.interimResults = true
   recognition.lang = "en-US"
+  recognition.serviceURI = "wss://www.google.com/speech-api/v2/recognize"
   recognition.maxAlternatives = 1
 
   recognition.onstart = () => {
@@ -119,8 +121,13 @@ const startListening = () => {
   }
 
   recognition.onerror = (e) => {
-    console.error("Speech error:", e.error)
+  console.error("Speech error:", e.error)
+  if (e.error === "network") {
+    // Network errors on localhost are normal
+    // Will work fine on HTTPS (Vercel)
+    setError("Speech recognition requires HTTPS. Please test on glotclass-ai.vercel.app")
   }
+}
 
   recognition.onend = () => {
     console.log("Recognition ended, isLive:", isLiveRef.current)
@@ -228,7 +235,11 @@ const stopListening = async () => {
                 </span>
               </div>
             </div>
-
+            {error && (
+              <div style={{ background: "#fff5f5", border: "1px solid #fcc", color: "#c00", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginTop: 8 }}>
+               ⚠️  {error}
+                  </div>
+            )}
             {/* Controls */}
             <div style={{ display: "flex", gap: 10 }}>
               {!isLive ? (
