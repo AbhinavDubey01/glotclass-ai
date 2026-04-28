@@ -1,17 +1,23 @@
 import { useState, useEffect } from "react"
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import App from "./App.jsx"
 import LoginPage from "./LoginPage.jsx"
+import ClassroomTeacher from "./ClassroomTeacher.jsx"
+import ClassroomStudent from "./ClassroomStudent.jsx"
 import { onAuthChange } from "./firebase.js"
 
 export default function Root() {
   const [user, setUser] = useState(undefined)
+  const path = window.location.pathname
 
   useEffect(() => {
     const unsub = onAuthChange((u) => setUser(u))
     return unsub
   }, [])
 
+  // Student page — no auth needed
+  if (path === "/student") return <ClassroomStudent />
+
+  // Still loading auth
   if (user === undefined) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f4faf0", flexDirection: "column", gap: 12 }}>
@@ -21,12 +27,16 @@ export default function Root() {
     )
   }
 
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
-        <Route path="/*" element={user ? <App user={user} /> : <Navigate to="/login" />} />
-      </Routes>
-    </BrowserRouter>
-  )
+  // Teacher page — needs auth
+  if (path === "/teacher") {
+    return user ? <ClassroomTeacher /> : <LoginPage />
+  }
+
+  // Login page
+  if (path === "/login") {
+    return user ? <App user={user} /> : <LoginPage />
+  }
+
+  // Main app
+  return user ? <App user={user} /> : <LoginPage />
 }

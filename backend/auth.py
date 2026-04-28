@@ -13,7 +13,7 @@ if service_account_json:
     cred = credentials.Certificate(service_account_dict)
 else:
     # Local development — use file
-    cred = credentials.Certificate("backend/serviceAccountKey.json")
+    cred = credentials.Certificate("serviceAccountKey.json")
 
 firebase_admin.initialize_app(cred)
 

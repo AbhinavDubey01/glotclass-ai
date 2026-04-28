@@ -267,35 +267,48 @@ const data = await res.json()
 
       {/* Top bar */}
       <header style={{ height: 50, background: "var(--bgc)", borderBottom: "1px solid var(--bdr)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.2rem", gap: "0.8rem", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-  {user?.photoURL && (
-    <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid var(--bdr)" }} />
-  )}
-  <span style={{ fontSize: 12, color: "var(--tx2)", fontWeight: 500 }}>
-    {user?.displayName?.split(" ")[0] || user?.email?.split("@")[0]}
-  </span>
-  <button onClick={logout} style={{ background: "transparent", border: "1.5px solid var(--bdr)", color: "var(--tx3)", fontSize: 11, padding: "4px 10px", borderRadius: 20, cursor: "pointer" }}>
-    Sign out
-  </button>
-</div>
-        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: "1.1rem" }}>
-          <span style={{ color: "var(--tx)" }}>Glot</span>
-          <span style={{ color: "var(--ac)" }}>Class</span>
-          <span style={{ color: "var(--tx3)", fontSize: "0.75rem", verticalAlign: "super" }}> AI</span>
-        </div>
-        <div style={{ background: "var(--acl)", color: "var(--ac2)", fontSize: "11.5px", fontWeight: 600, padding: "4px 12px", borderRadius: 20 }}>
-          ⏱ {fmt(seconds)} studied
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ display: "flex", background: "var(--bg)", border: "1px solid var(--bdr)", borderRadius: 20, padding: 2, gap: 2 }}>
-            {[["light", "☀️"], ["dark", "🌙"], ["dy", "👁"]].map(([t, icon]) => (
-              <button key={t} onClick={() => setTheme(t)} style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: theme === t ? "var(--bgc)" : "transparent", cursor: "pointer", fontSize: 12, boxShadow: theme === t ? "0 1px 3px rgba(0,0,0,.1)" : "none" }}>
-                {icon}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
+  
+  {/* Left — user info */}
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    {user?.photoURL && (
+      <img src={user.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid var(--bdr)" }} />
+    )}
+    <span style={{ fontSize: 12, color: "var(--tx2)", fontWeight: 500 }}>
+      {user?.displayName?.split(" ")[0] || user?.email?.split("@")[0] || "User"}
+    </span>
+    <button onClick={logout} style={{ background: "transparent", border: "1.5px solid var(--bdr)", color: "var(--tx3)", fontSize: 11, padding: "4px 10px", borderRadius: 20, cursor: "pointer" }}>
+      Sign out
+    </button>
+  </div>
+
+  {/* Center — logo */}
+  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: "1.1rem" }}>
+    <span style={{ color: "var(--tx)" }}>Glot</span>
+    <span style={{ color: "var(--ac)" }}>Class</span>
+    <span style={{ color: "var(--tx3)", fontSize: "0.75rem", verticalAlign: "super" }}> AI</span>
+  </div>
+
+  {/* Right — timer + theme + classroom */}
+  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ background: "var(--acl)", color: "var(--ac2)", fontSize: "11.5px", fontWeight: 600, padding: "4px 12px", borderRadius: 20 }}>
+      ⏱ {fmt(seconds)} studied
+    </div>
+    <div style={{ display: "flex", background: "var(--bg)", border: "1px solid var(--bdr)", borderRadius: 20, padding: 2, gap: 2 }}>
+      {[["light", "☀️"], ["dark", "🌙"], ["dy", "👁"]].map(([t, icon]) => (
+        <button key={t} onClick={() => setTheme(t)} style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: theme === t ? "var(--bgc)" : "transparent", cursor: "pointer", fontSize: 12, boxShadow: theme === t ? "0 1px 3px rgba(0,0,0,.1)" : "none" }}>
+          {icon}
+        </button>
+      ))}
+    </div>
+    <button onClick={() => { window.location.href = "/teacher" }} style={{ background: "var(--ac)", color: "#fff", border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+      🏫 Teach
+    </button>
+    <button onClick={() => { window.location.href = "/student" }} style={{ background: "transparent", color: "var(--ac)", border: "1.5px solid var(--ac)", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+      🎓 Join
+    </button>
+  </div>
+
+</header>
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
